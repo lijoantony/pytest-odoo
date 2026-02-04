@@ -20,6 +20,9 @@ import _pytest.python
 import pytest
 
 import odoo
+from odoo import release
+if release.version_info >= (19,0):
+    import odoo.tools, odoo.service, odoo.release, odoo.api, odoo.tests, odoo.sql_db, odoo.modules
 
 
 def pytest_addoption(parser):

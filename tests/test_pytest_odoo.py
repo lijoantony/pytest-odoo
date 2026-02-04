@@ -91,7 +91,7 @@ class TestPytestOdoo(TestCase):
     def test_disable_odoo_test_retry(self):
         from odoo.tests import BaseCase
 
-        original_basecase_run= BaseCase.run
+        original_basecase_run = BaseCase.run
 
         def restore_basecase_run():
             BaseCase.run = original_basecase_run
@@ -107,7 +107,7 @@ class TestPytestOdoo(TestCase):
     def test_disable_odoo_test_retry_ignore_run_doesnt_exists(self):
         from odoo.tests import BaseCase
 
-        original_basecase_run= BaseCase.run
+        original_basecase_run = BaseCase.run
 
         def restore_basecase_run():
             BaseCase.run = original_basecase_run
