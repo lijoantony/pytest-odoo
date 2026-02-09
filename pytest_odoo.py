@@ -6,6 +6,7 @@
 
 import ast
 import os
+import socket
 import signal
 import subprocess
 import threading
@@ -105,9 +106,16 @@ def pytest_cmdline_main(config):
     else:
         yield
 
+def _get_available_random_port():
+    """Get an available random port."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
 @pytest.fixture(scope="module", autouse=True)
 def load_http(request):
     if request.config.getoption("--odoo-http"):
+        odoo.tools.config['http_port'] = _get_available_random_port()
         if odoo.release.version_info >= (15,):
             from odoo import http
             from odoo.service import server
