@@ -22,7 +22,7 @@ import pytest
 import odoo
 from odoo import release
 if release.version_info >= (19,0):
-    import odoo.tools, odoo.service, odoo.release, odoo.api, odoo.tests, odoo.sql_db, odoo.modules
+    import odoo.api, odoo.http, odoo.modules, odoo.release,odoo.tools, odoo.service, odoo.sql_db, odoo.tests
 
 
 def pytest_addoption(parser):
@@ -95,14 +95,6 @@ def pytest_cmdline_main(config):
         support_subtest()
         disable_odoo_test_retry()
         monkey_patch_resolve_pkg_root_and_module_name()
-        odoo.service.server.start(preload=[], stop=True)
-        # odoo.service.server.start() modifies the SIGINT signal by its own
-        # one which in fact prevents us to stop anthem with Ctrl-c.
-        # Restore the default one.
-        signal.signal(signal.SIGINT, signal.default_int_handler)
-
-        if odoo.release.version_info >= (18,):
-            odoo.modules.module.current_test = True
 
         if odoo.release.version_info < (15,):
             # Refactor in Odoo 15, not needed anymore
@@ -116,8 +108,20 @@ def pytest_cmdline_main(config):
 @pytest.fixture(scope="module", autouse=True)
 def load_http(request):
     if request.config.getoption("--odoo-http"):
-        odoo.service.server.start(stop=True)
-        signal.signal(signal.SIGINT, signal.default_int_handler)
+        if odoo.release.version_info >= (15,):
+            from odoo import http
+            from odoo.service import server
+            server.load_server_wide_modules()
+            server.server = server.ThreadedServer(http.root)
+            server.server.start(stop=False)
+            signal.signal(signal.SIGINT, signal.default_int_handler)
+            yield
+            server.server.stop()
+        else:
+            odoo.service.server.start(stop=True)
+            yield
+    else:
+        yield
 
 @contextmanager
 def _shared_filestore(original_db_name, db_name):
@@ -207,7 +211,6 @@ def monkey_patch_resolve_pkg_root_and_module_name():
 
 
     _pytest.pathlib.resolve_pkg_root_and_module_name= resolve_pkg_root_and_module_name
-
 
 def support_subtest():
     """Odoo from version 16.0 re-define its own TestCase.subTest context manager
