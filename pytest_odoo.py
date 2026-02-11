@@ -275,6 +275,11 @@ def pytest_ignore_collect(collection_path: Path) -> Optional[bool]:
 
 
 def pytest_runtest_setup(item):
-    if hasattr(item, "instance") and release.version_info >= (19,0):
-        test_instance = item.instance
-        odoo.modules.module.current_test = test_instance
+    if hasattr(item, "instance"):
+        from odoo.tests.common import HttpCase
+        if isinstance(item.instance, HttpCase) and not item.config.getoption("--odoo-http"):
+            pytest.skip(f"Test {item.name} skipped because it is an HttpCase and --odoo-http is not set")
+
+        if release.version_info >= (19,0):
+            test_instance = item.instance
+            odoo.modules.module.current_test = test_instance
