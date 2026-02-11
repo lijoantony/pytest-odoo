@@ -249,7 +249,6 @@ def disable_odoo_test_retry():
         # Odoo <= 15.0
         pass
 
-
 def _find_manifest_path(collection_path: Path) -> Path:
     """Try to locate an Odoo manifest file in the collection path."""
     # check if collection_path is an addon directory
@@ -273,3 +272,9 @@ def pytest_ignore_collect(collection_path: Path) -> Optional[bool]:
         # installable = False, do not collect this
         return True
     return None
+
+
+def pytest_runtest_setup(item):
+    if hasattr(item, "instance") and release.version_info >= (19,0):
+        test_instance = item.instance
+        odoo.modules.module.current_test = test_instance
