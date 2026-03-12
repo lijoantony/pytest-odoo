@@ -135,18 +135,7 @@ def pytest_cmdline_main(config):
 @pytest.fixture(scope="module", autouse=True)
 def load_http(request):
     if request.config.getoption("--odoo-http"):
-        # Configure worker-specific HTTP port if running under xdist
-        xdist_worker = os.getenv("PYTEST_XDIST_WORKER")
-        if xdist_worker:
-            try:
-                worker_num = _get_worker_number(xdist_worker)
-                base_port = request.config.getoption("--odoo-http-port", default=8069)
-                # Use base_port + worker_num + 1 to avoid conflict with main process
-                worker_port = base_port + worker_num + 1
-                odoo.tools.config["http_port"] = worker_port
-            except ValueError:
-                pass
-
+        # Worker-specific HTTP port is already configured in pytest_cmdline_main
         odoo.service.server.start(stop=True)
         signal.signal(signal.SIGINT, signal.default_int_handler)
 
@@ -197,22 +186,19 @@ def _shared_filestore(original_db_name, db_name):
         yield
 
 @contextmanager
-def _worker_db_name(config=None):
-    """Configure worker-specific database and HTTP port for parallel execution.
+def _worker_db_name():
+    """Configure worker-specific database for parallel execution.
 
-    When running under pytest-xdist, each worker receives:
-    - A unique database: {original_db_name}-{worker_id}
-    - A unique HTTP port: base_port + worker_number + 1
+    When running under pytest-xdist, each worker receives a unique database:
+    {original_db_name}-{worker_id}
 
-    Args:
-        config: pytest Config object to access CLI options (optional)
+    Worker-specific HTTP ports are configured in pytest_cmdline_main.
 
     Yields:
         str: The database name for this worker
     """
     xdist_worker = os.getenv("PYTEST_XDIST_WORKER")
     original_db_name = db_name = odoo.tests.common.get_db_name()
-    original_http_port = odoo.tools.config.get('http_port', 8069)
 
     try:
         if xdist_worker:
@@ -222,21 +208,8 @@ def _worker_db_name(config=None):
             subprocess.run(["createdb", "-T", original_db_name, db_name], check=True)
             odoo.tools.config["db_name"] = db_name
             odoo.tools.config["dbfilter"] = f"^{db_name}$"
-
-            # Configure worker-specific HTTP port
-            try:
-                worker_num = _get_worker_number(xdist_worker)
-                base_port = original_http_port
-                if config:
-                    # Use CLI option if provided
-                    base_port = config.getoption("--odoo-http-port", default=8069)
-                # Use base_port + worker_num + 1 to avoid conflict with main process
-                # Main process uses base_port, workers use base_port+1, base_port+2, etc.
-                worker_port = base_port + worker_num + 1
-                odoo.tools.config["http_port"] = worker_port
-            except ValueError:
-                # If worker ID parsing fails, continue with original port
-                pass
+            # NOTE: Worker-specific HTTP port is already set in
+            # pytest_cmdline_main — no need to set it again here.
 
         with _shared_filestore(original_db_name, db_name):
             yield db_name
@@ -246,8 +219,9 @@ def _worker_db_name(config=None):
             subprocess.run(["dropdb", db_name, "--if-exists"], check=True)
             odoo.tools.config["db_name"] = original_db_name
             odoo.tools.config["dbfilter"] = f"^{original_db_name}$"
-            # Restore original HTTP port
-            odoo.tools.config["http_port"] = original_http_port
+            # NOTE: Do NOT restore http_port — it's worker-specific for the
+            # entire process lifetime. Restoring it causes all workers to
+            # revert to the same port, breaking HttpCase/tour tests.
 
     
 @pytest.fixture(scope='session', autouse=True)
@@ -261,7 +235,7 @@ def load_registry(request):
     # Finally we enable `testing` flag on current thread
     # since Odoo sets it when loading test suites.
     threading.current_thread().testing = True
-    with _worker_db_name(config=request.config) as db_name:
+    with _worker_db_name() as db_name:
         odoo.modules.registry.Registry(db_name)
         yield
 
