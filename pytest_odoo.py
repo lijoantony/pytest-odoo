@@ -96,6 +96,7 @@ def pytest_cmdline_main(config):
         support_subtest()
         disable_odoo_test_retry()
         monkey_patch_resolve_pkg_root_and_module_name()
+        monkey_patch_chrome_find_websocket()
 
         if odoo.release.version_info < (15,):
             # Refactor in Odoo 15, not needed anymore
@@ -248,6 +249,46 @@ def disable_odoo_test_retry():
     except (ImportError, AttributeError):
         # Odoo <= 15.0
         pass
+
+def monkey_patch_chrome_find_websocket():
+    """Fix Chrome DevTools page selection for Chrome 134+.
+
+    Chrome 134+ creates extension background pages as debuggable targets.
+    The original _find_websocket picks index 0, which may be an extension
+    page instead of about:blank, causing net::ERR_ABORTED on navigation.
+    """
+    try:
+        from odoo.tests.common import ChromeBrowser
+    except ImportError:
+        return
+
+    def _find_websocket_fixed(self):
+        version = self._json_command('version')
+        self._logger.info('Browser version: %s', version['Browser'])
+        targets = self._json_command('')
+        if not isinstance(targets, list):
+            targets = [targets]
+        target = None
+        for t in targets:
+            if t.get('type') == 'page' and t.get('url') == 'about:blank':
+                target = t
+                break
+        if not target:
+            for t in targets:
+                if t.get('type') == 'page':
+                    target = t
+                    break
+        if not target:
+            target = targets[0]
+        self.ws_url = target['webSocketDebuggerUrl']
+        self.dev_tools_frontend_url = target.get('devtoolsFrontendUrl')
+        self._logger.info(
+            'Chrome headless temporary user profile dir: %s',
+            self.user_data_dir,
+        )
+
+    ChromeBrowser._find_websocket = _find_websocket_fixed
+
 
 def _find_manifest_path(collection_path: Path) -> Path:
     """Try to locate an Odoo manifest file in the collection path."""
